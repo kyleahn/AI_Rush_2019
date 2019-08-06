@@ -71,11 +71,11 @@ if __name__ == '__main__':
     parser.add_argument('--pause', type=int, default=0)
     
     # custom args
-    parser.add_argument('--input_size', type=int, default=128)
+    parser.add_argument('--input_size', type=int, default=224)
     parser.add_argument('--batch_size', type=int, default=256)
     parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--gpu_num', type=int, nargs='+', default=[0])
-    parser.add_argument('--resnet', default=False)
+    parser.add_argument('--resnet', default=True)
     parser.add_argument('--hidden_size', type=int, default=256)
     parser.add_argument('--output_size', type=int, default=350) # Fixed
     parser.add_argument('--epochs', type=int, default=100)

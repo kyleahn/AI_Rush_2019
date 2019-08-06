@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 from nsml import DATASET_PATH
 
-def train_dataloader(input_size=128,
+def train_dataloader(input_size=224,
                     batch_size=64,
                     num_workers=0,
                     ):
