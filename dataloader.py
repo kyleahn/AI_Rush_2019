@@ -8,27 +8,6 @@ import torch
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
-from nsml import DATASET_PATH
-
-def train_dataloader(input_size=224,
-                    batch_size=64,
-                    num_workers=0,
-                    ):
-    
-    image_dir = os.path.join(DATASET_PATH, 'train', 'train_data', 'images') 
-    train_label_path = os.path.join(DATASET_PATH, 'train', 'train_label') 
-    train_meta_path = os.path.join(DATASET_PATH, 'train', 'train_data', 'train_with_valid_tags.csv')
-    train_meta_data = pd.read_csv(train_meta_path, delimiter=',', header=0)
-        
-    dataloader = DataLoader(
-        AIRushDataset(image_dir, train_meta_data, label_path=train_label_path, 
-                      transform=transforms.Compose([transforms.Resize((input_size, input_size)), transforms.ToTensor()])),
-        batch_size=batch_size,
-        shuffle=True,
-        num_workers=num_workers,
-        pin_memory=True)
-    return dataloader
-
 
 class AIRushDataset(Dataset):
     def __init__(self, image_data_path, meta_data, label_path=None, transform=None):
