@@ -12,7 +12,7 @@ import nsml
 import pandas as pd
 from torchvision import transforms
 from torch.utils.data import Dataset, DataLoader
-from dataloader import AIRushDataset
+from dataset import AIRushDataset
 from nsml import DATASET_PATH
 
 def to_np(t):
@@ -122,8 +122,7 @@ if __name__ == '__main__':
             transforms.Resize((args.input_size, args.input_size)), 
             transforms.ToTensor()
             ])
-        full_dataset = AIRushDataset(image_dir, train_meta_data, label_path=train_label_path, 
-                      transform=tf)
+        full_dataset = AIRushDataset(image_dir, train_meta_data, label_path=train_label_path, transform=tf)
         
         train_size = int(0.95 * len(full_dataset))
         test_size = len(full_dataset) - train_size
