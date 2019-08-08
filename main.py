@@ -39,9 +39,13 @@ def bind_model(model_nsml):
         batch_size=200 # you can change this. But when you use 'nsml submit --test' for test infer, there are only 200 number of data.
         device = 0
         
+        tf = transforms.Compose([
+            transforms.Resize((args.input_size, args.input_size)), 
+            transforms.ToTensor()
+            ])
         dataloader = DataLoader(
                         AIRushDataset(test_image_data_path, test_meta_data, label_path=None,
-                                      transform=transforms.Compose([transforms.Resize((input_size, input_size)), transforms.ToTensor()])),
+                        transform=tf),
                         batch_size=batch_size,
                         shuffle=False,
                         num_workers=0,
@@ -74,12 +78,12 @@ if __name__ == '__main__':
     # custom args
     parser.add_argument('--input_size', type=int, default=224)
     parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--hidden_size', type=int, default=256)
     parser.add_argument('--output_size', type=int, default=350) # Fixed
     parser.add_argument('--epochs', type=int, default=1000)
     parser.add_argument('--log_interval', type=int, default=10)
-    parser.add_argument('--learning_rate', type=float, default=2.5e-4)
+    parser.add_argument('--learning_rate', type=float, default=0.00025)
     parser.add_argument('--device', type=int, default=0)
     parser.add_argument('--seed', type=int, default=42)
     args = parser.parse_args()
@@ -109,18 +113,27 @@ if __name__ == '__main__':
         train_meta_path = os.path.join(DATASET_PATH, 'train', 'train_data', 'train_with_valid_tags.csv')
         train_meta_data = pd.read_csv(train_meta_path, delimiter=',', header=0)
         
+        # tf = transforms.Compose([
+        #     transforms.Resize(256), 
+        #     transforms.TenCrop(224), 
+        #     transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
+        #     ])
+        tf = transforms.Compose([
+            transforms.Resize((args.input_size, args.input_size)), 
+            transforms.ToTensor()
+            ])
         full_dataset = AIRushDataset(image_dir, train_meta_data, label_path=train_label_path, 
-                      transform=transforms.Compose([transforms.Resize((args.input_size, args.input_size)), transforms.ToTensor()]))
+                      transform=tf)
         
         train_size = int(0.95 * len(full_dataset))
         test_size = len(full_dataset) - train_size
         train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
 
-        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True)
-        test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers, pin_memory=True)
+        train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
 
-        print('Number of Train data :', len(train_dataloader))
-        print('Number of Test data :', len(test_dataloader))
+        print('Number of Train data :', len(train_dataloader.dataset))
+        print('Number of Test data :', len(test_dataloader.dataset))
         for epoch_idx in range(1, args.epochs + 1):
             epoch_start_time = time.time()
 
