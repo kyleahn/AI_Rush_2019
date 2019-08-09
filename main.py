@@ -18,6 +18,13 @@ from nsml import DATASET_PATH
 def to_np(t):
     return t.cpu().detach().numpy()
 
+tf = transforms.Compose([
+    transforms.Resize(256), 
+    transforms.TenCrop(224), 
+    transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops])), 
+    transforms.Lambda(lambda crops: torch.stack([transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))(crop) for crop in crops]))
+    ])
+
 def bind_model(model_nsml):
     def save(dir_name, **kwargs):
         save_state_path = os.path.join(dir_name, 'state_dict.pkl')
@@ -39,10 +46,6 @@ def bind_model(model_nsml):
         batch_size=200 # you can change this. But when you use 'nsml submit --test' for test infer, there are only 200 number of data.
         device = 0
         
-        tf = transforms.Compose([
-            transforms.Resize((args.input_size, args.input_size)), 
-            transforms.ToTensor()
-            ])
         dataloader = DataLoader(
                         AIRushDataset(test_image_data_path, test_meta_data, label_path=None,
                         transform=tf),
@@ -55,8 +58,11 @@ def bind_model(model_nsml):
         model_nsml.eval()
         predict_list = []
         for batch_idx, image in enumerate(dataloader):
+            bs, ncrops, c, h, w = image.size()
+
             image = image.to(device)
-            output = model_nsml(image).double()
+            output = model_nsml(image.view(-1, c, h, w)).double()
+            output = output.view(bs, ncrops, -1).mean(1)
             
             output_prob = F.softmax(output, dim=1)
             predict = np.argmax(to_np(output_prob), axis=1)
@@ -113,15 +119,6 @@ if __name__ == '__main__':
         train_meta_path = os.path.join(DATASET_PATH, 'train', 'train_data', 'train_with_valid_tags.csv')
         train_meta_data = pd.read_csv(train_meta_path, delimiter=',', header=0)
         
-        # tf = transforms.Compose([
-        #     transforms.Resize(256), 
-        #     transforms.TenCrop(224), 
-        #     transforms.Lambda(lambda crops: torch.stack([transforms.ToTensor()(crop) for crop in crops]))
-        #     ])
-        tf = transforms.Compose([
-            transforms.Resize((args.input_size, args.input_size)), 
-            transforms.ToTensor()
-            ])
         full_dataset = AIRushDataset(image_dir, train_meta_data, label_path=train_label_path, transform=tf)
         
         train_size = int(0.95 * len(full_dataset))
@@ -129,23 +126,26 @@ if __name__ == '__main__':
         train_dataset, test_dataset = torch.utils.data.random_split(full_dataset, [train_size, test_size])
 
         train_dataloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
-        test_dataloader = DataLoader(test_dataset, batch_size=64, shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
+        test_dataloader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers, pin_memory=True, drop_last=True)
 
         print('Number of Train data :', len(train_dataloader.dataset))
         print('Number of Test data :', len(test_dataloader.dataset))
+        niter = 0
         for epoch_idx in range(1, args.epochs + 1):
             epoch_start_time = time.time()
 
             (test_image, test_tags) = next(iter(test_dataloader))
             for batch_idx, (image, tags) in enumerate(train_dataloader):
-                niter = epoch_idx * len(train_dataloader) + batch_idx
+                niter += 1
 
                 # train
                 model.train()
+                bs, ncrops, c, h, w = image.size()
 
                 optimizer.zero_grad()
                 image = image.to(device); tags = tags.to(device)
-                output = model(image).double()
+                output = model(image.view(-1, c, h, w)).double()
+                output = output.view(bs, ncrops, -1).mean(1)
                 loss = criterion(output, tags)
                 loss.backward()
                 optimizer.step()
@@ -157,41 +157,43 @@ if __name__ == '__main__':
                 train_accuracy = bool_vector.sum() / len(bool_vector)
                 train_loss = loss.item()
 
-                # test
-                model.eval()
-
-                test_image = test_image.to(device); test_tags = test_tags.to(device)
-                output = model(test_image).double()
-                loss = criterion(output, test_tags)
-
-                output_prob = F.softmax(output, dim=1)
-                predict_vector = np.argmax(to_np(output_prob), axis=1)
-                label_vector = to_np(test_tags)
-                bool_vector = predict_vector == label_vector
-                test_accuracy = bool_vector.sum() / len(bool_vector)
-                test_loss = loss.item()
-                
-                # save model
                 if batch_idx % args.log_interval == 0:
+                    # test
+                    model.eval()
+                    bs, ncrops, c, h, w = test_image.size()
+
+                    test_image = test_image.to(device); test_tags = test_tags.to(device)
+                    output = model(test_image.view(-1, c, h, w)).double()
+                    output = output.view(bs, ncrops, -1).mean(1)
+                    loss = criterion(output, test_tags)
+
+                    output_prob = F.softmax(output, dim=1)
+                    predict_vector = np.argmax(to_np(output_prob), axis=1)
+                    label_vector = to_np(test_tags)
+                    bool_vector = predict_vector == label_vector
+                    test_accuracy = bool_vector.sum() / len(bool_vector)
+                    test_loss = loss.item()
+
+                    # save model
                     nsml.save(niter)
-                # print log
-                print('[{}/{}][{}/{}]: Train Loss {:2.4f} / Train Acc {:2.4f} / Test Loss {:2.4f} / Test Acc {:2.4f}'.format(epoch_idx,
-                                                            args.epochs,
-                                                            batch_idx,
-                                                            len(train_dataloader),
-                                                            train_loss,
-                                                            train_accuracy,
-                                                            test_loss,
-                                                            test_accuracy))
-                # write loss
-                nsml.report(
-                    summary=True,
-                    step=niter,
-                    scope=locals(),
-                    **{
-                    "train__loss": train_loss,
-                    "train__accuracy": train_accuracy,
-                    "test__loss": test_loss,
-                    "test__accuracy": test_accuracy,
-                    })
+                    # print log
+                    print('[{}/{}][{}/{}]: Train Loss {:2.4f} / Train Acc {:2.4f} / Test Loss {:2.4f} / Test Acc {:2.4f}'.format(epoch_idx,
+                                                                args.epochs,
+                                                                batch_idx,
+                                                                len(train_dataloader),
+                                                                train_loss,
+                                                                train_accuracy,
+                                                                test_loss,
+                                                                test_accuracy))
+                    # write loss
+                    nsml.report(
+                        summary=True,
+                        step=niter,
+                        scope=locals(),
+                        **{
+                        "train__loss": train_loss,
+                        "train__accuracy": train_accuracy,
+                        "test__loss": test_loss,
+                        "test__accuracy": test_accuracy,
+                        })
             print('Time :', time.time() - epoch_start_time)
